@@ -57,7 +57,7 @@ class UMI_SVB(UMI):
         Keyword Arguments:
             eps -- Small constant that sets the weights a small interval around 1 (default: {0.001})
         """
-        old_weights = self.L1.weight.data.clone()
+        old_weights = self.L1.weight.data.clone().detach()
         w_svd = torch.linalg.svd(old_weights,full_matrices=False) # Singular value decomposition
         U,s,V = w_svd[0],w_svd[1],w_svd[2]
         for i in range(len(s)): # Main algorithm from Jia et al. 2019
@@ -70,6 +70,7 @@ class UMI_SVB(UMI):
         new_weights = U @ torch.diag(s) @ V # Reconstruct the matrix with the new singular values
         new_weights = torch.tensor(new_weights,dtype=torch.float32)
         self.L1.weight.data = new_weights # Update the weights for the model
+        # self.L1.weight.data = torch.nn.parameter.Parameter()
         
 
 class UMI_SVB_soft(UMI):
