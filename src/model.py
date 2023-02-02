@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
+from torch.autograd import Variable, functional
 import torch.optim as optim
 
 class UMI(nn.Module):
@@ -111,6 +111,23 @@ class UMI_SVB_soft(UMI):
         W_orth = W.transpose(0,1) @ W # W^T * W
         W_orth = W_orth - torch.eye(W_orth.shape[0]) # W^T * W - I
         loss += self.decay*torch.linalg.norm(W_orth,ord="fro")**2 # Note that since we only have one layer we need not do this over weights from more layers
+        return loss
+
+
+class UMI_Jacobi(UMI):
+    def __init__(self,in_size,out_size,lr=1e-2,bias=False,decay=0.01):
+        super().__init__(in_size,out_size,lr=lr,bias=bias)
+        torch.nn.init.orthogonal_(self.L1.weight, gain=1)
+        self.decay = decay
+
+    def loss_fn(self, x, y_true):
+        y_hat = self(x.float())
+        loss = self.L(y_hat,y_true)
+        for i in x:
+            # jacobi = functional.jacobian(self.L1,i.float(),create_graph=True,strict=False,vectorize=True) # Jacobian of the first layer
+            jacobi = functional.jacobian(self.L1,i.float(),create_graph=True,strict=True,vectorize=False) # Jacobian of the first layer
+            loss += self.decay*(torch.linalg.det(jacobi.transpose(0,1)@jacobi) - 1) # Determinant of the Jacobian (Jacobian is a square matrix
+        
         return loss
 
     
