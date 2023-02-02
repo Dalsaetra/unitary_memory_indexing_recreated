@@ -5,6 +5,7 @@ https://github.com/Vemundss/unitary_memory_indexing/blob/main/src/AnimatedScatte
 # import matplotlib
 # matplotlib.use('nbAgg') # Tried to use same backend as jupyter notebook
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import matplotlib.animation as animation
 import numpy as np
 
@@ -52,7 +53,7 @@ class AnimatedScatter(object):
     def setup_plot(self):
         """Initial drawing of the scatter plot."""
         data = self.cluster_data
-        colors = ["red", "green", "blue", "orange", "purple"]
+        colors = cm.rainbow(np.linspace(0, 1, self.n_clusters))
         self.means = np.mean(
             np.reshape(data, (self.n_clusters, int(data.shape[0] / self.n_clusters), data.shape[-1])), axis=1
         )
@@ -120,7 +121,7 @@ class AnimatedScatter(object):
 
     def update(self, k):
         """Update the scatter plot."""
-        colors = ["red", "green", "blue", "orange", "purple"]
+        colors = cm.rainbow(np.linspace(0, 1, self.n_clusters))
         color_idxs = np.argmax(
             self.means @ self.weight_data[k], axis=0
         )  # shapes (4,2) @ (2,4)
