@@ -42,9 +42,22 @@ class UMI_L1(UMI):
 
 class UMI_L2(UMI):
     def __init__(self,in_size,out_size,decay=0.01,built_in=True,lr=1e-2,bias=False):
+        """Initializes the model.
+
+        Arguments:
+            in_size -- number of input features
+            out_size -- number of output features (labels/number of clusters)
+
+        Keyword Arguments:
+            decay -- L2 weight decay (default: {0.01})
+            built_in -- If to use built in Adam weight decay (default: {True})
+            lr -- Learning rate (default: {1e-2})
+            bias -- If to use biases in addition to weights (default: {False})
+        """
         super().__init__(in_size,out_size,lr=lr,bias=bias)
         if built_in:
             self.optim = optim.Adam(params=self.parameters(),lr=lr,weight_decay=decay) # Weight decay implements L2 reg.
+            self.built_in = built_in
         else:
             self.decay = decay
             self.built_in = built_in
