@@ -17,7 +17,8 @@ class DataGen:
                 options: 
                     "sym": uniform symmetric dist.
                     "as": asymmetric dist. with one symmetric cluster moved 
-                    "as_extra": asymmetric dist. with a symmetric distribution with one extra cluster added (default: {"sym"})
+                    "as_extra": asymmetric dist. with a symmetric distribution with one extra cluster added
+                    "parallel": parallel clusters
                 (default: {"sym"})
             seed -- seed of random normal distribution (default: {1234})
             as_pos -- 2 length list of 2D coordinate of extra asymmetric cluster, None only if symmetric (default: {None})
@@ -36,6 +37,10 @@ class DataGen:
             self.centers, self.data, self.labels = self.data_gen_as()
         elif name == "as_extra":
             self.centers, self.data, self.labels = self.data_gen_as_extra()
+        elif name == "parallel":
+            self.centers, self.data, self.labels = self.data_gen_parallel()
+        elif name == "parallel_extra":
+            self.centers, self.data, self.labels = self.data_gen_parallel_extra()
         else:
             raise ValueError("Invalid name")
 
@@ -98,15 +103,46 @@ class DataGen:
             labels[i*self.n_points:(i+1)*self.n_points] = i
         return centers,data,labels
 
+    def data_gen_parallel(self):
+        """Generate clusters of points around uniformly spaced points around origin in 2D
+        parallel: 2 parallel clusters
+
+        Returns:
+            [centers,data,labels]: Array of cluster centers, array of all 2D datapoints, array of all corresponding labels to datapoints
+        """
+        n_tot = self.n_clusters*self.n_points # Total number of datapoints
+        centers = np.array([[0,i*self.scale,] for i in range(1,self.n_clusters+1)]) # Generate centers along y-axis
+        data = np.zeros((n_tot,2))
+        labels = np.zeros(n_tot)
+        for i in range(self.n_clusters):
+            np.random.seed(seed=self.seed)
+            scatter = np.random.normal(loc=centers[i],scale=.1, size=(self.n_points,2))
+            data[i*self.n_points:(i+1)*self.n_points] = scatter
+            labels[i*self.n_points:(i+1)*self.n_points] = i
+        return centers,data,labels
+
+    def data_gen_parallel_extra(self):
+        """Generate clusters of points around uniformly spaced points around origin in 2D
+        parallel: 2 parallel clusters + 1
+
+        Returns:
+            [centers,data,labels]: Array of cluster centers, array of all 2D datapoints, array of all corresponding labels to datapoints
+        """
+        n_tot = self.n_clusters*self.n_points # Total number of datapoints
+        centers = np.array([[0,i*self.scale,] for i in range(1,self.n_clusters)]) # Generate centers along y-axis
+        centers = np.concatenate((centers,[self.scale*self.as_pos]),axis=0)
+        data = np.zeros((n_tot,2))
+        labels = np.zeros(n_tot)
+        for i in range(self.n_clusters):
+            np.random.seed(seed=self.seed)
+            scatter = np.random.normal(loc=centers[i],scale=.1, size=(self.n_points,2))
+            data[i*self.n_points:(i+1)*self.n_points] = scatter
+            labels[i*self.n_points:(i+1)*self.n_points] = i
+        return centers,data,labels
+
     def plot(self):
         """Plot the dataset with the cluster centers as vectors"""
-        # color_atlas = ["r","g","b","m","c","y","orange","brown","lime"]
-        
-        # colors = []
         colors = cm.rainbow(np.linspace(0, 1, self.n_clusters))
-        # for i in range(self.n_clusters):
-        #     colors.append(color_atlas[i])
-
         for col,center,i in zip(colors,self.centers,range(self.n_clusters)):
             plt.scatter(self.data[i*self.n_points:(i+1)*self.n_points,0],self.data[i*self.n_points:(i+1)*self.n_points,1],color=col)
             plt.arrow(0,0,center[0],center[1],length_includes_head=True,width=0.01,color=(0,0,0,0.5))
