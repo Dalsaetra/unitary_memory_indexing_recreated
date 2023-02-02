@@ -21,15 +21,18 @@ def projection_rejection(u, v):
 class AnimatedScatter(object):
     """An animated scatter plot using matplotlib.animations.FuncAnimation."""
 
-    def __init__(self, cluster_data, weight_data, loss_history):
+    def __init__(self, cluster_data, weight_data, loss_history, n_clusters=4,acc=None):
         """
         Args:
             cluster_data: (N,2), where N=4*n -> four clusters
             weight_data: (#epochs,2,4)
+            acc: end accuracy
         """
         self.cluster_data = cluster_data
         self.weight_data = weight_data
         self.loss_history = loss_history
+        self.n_clusters = n_clusters
+        self.acc = acc
 
         # Setup the figure and axes...
         self.fig, self.ax = plt.subplots()
@@ -49,14 +52,14 @@ class AnimatedScatter(object):
     def setup_plot(self):
         """Initial drawing of the scatter plot."""
         data = self.cluster_data
-        colors = ["red", "green", "blue", "orange"]
+        colors = ["red", "green", "blue", "orange", "purple"]
         self.means = np.mean(
-            np.reshape(data, (4, int(data.shape[0] / 4), data.shape[-1])), axis=1
+            np.reshape(data, (self.n_clusters, int(data.shape[0] / self.n_clusters), data.shape[-1])), axis=1
         )
         color_idxs = np.argmax(
             self.means @ self.weight_data[0], axis=0
-        )  # shapes (4,2) @ (2,4)
-        cluster_N = int(data.shape[0] / 4)
+        )  # shapes (self.n_clusters,2) @ (2,self.n_clusters)
+        cluster_N = int(data.shape[0] / self.n_clusters)
         self.weight_arrows = []
         self.rejection_arrows = []
         self.projection_arrows = []
@@ -117,11 +120,11 @@ class AnimatedScatter(object):
 
     def update(self, k):
         """Update the scatter plot."""
-        colors = ["red", "green", "blue", "orange"]
+        colors = ["red", "green", "blue", "orange", "purple"]
         color_idxs = np.argmax(
             self.means @ self.weight_data[k], axis=0
         )  # shapes (4,2) @ (2,4)
-        for i in range(4):
+        for i in range(self.n_clusters):
             self.weight_arrows.pop(0).remove()  # delete arrow
             self.rejection_arrows.pop(0).remove()
             self.projection_arrows.pop(0).remove()
@@ -163,7 +166,7 @@ class AnimatedScatter(object):
             self.rejection_arrows.append(rej_arrow)
             self.projection_arrows.append(proj_arrow)
 
-        self.ax.set_title("Loss={}".format(self.loss_history[k]))
+        self.ax.set_title(f"Loss={self.loss_history[k]} End accuracy={self.acc}")
 
         # We need to return the updated artist for FuncAnimation to draw..
         # Note that it expects a sequence of artists, thus the trailing comma.
