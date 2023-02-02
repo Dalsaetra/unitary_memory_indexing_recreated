@@ -41,6 +41,8 @@ class DataGen:
             self.centers, self.data, self.labels = self.data_gen_parallel()
         elif name == "parallel_extra":
             self.centers, self.data, self.labels = self.data_gen_parallel_extra()
+        elif name == "manual":
+            self.centers, self.data, self.labels = self.data_gen_manual()
         else:
             raise ValueError("Invalid name")
 
@@ -139,6 +141,19 @@ class DataGen:
             data[i*self.n_points:(i+1)*self.n_points] = scatter
             labels[i*self.n_points:(i+1)*self.n_points] = i
         return centers,data,labels
+
+    def data_gen_manual(self):
+        n_tot = self.n_clusters*self.n_points # Total number of datapoints
+        centers = self.as_pos
+        data = np.zeros((n_tot,2))
+        labels = np.zeros(n_tot)
+        for i in range(self.n_clusters):
+            np.random.seed(seed=self.seed)
+            scatter = np.random.normal(loc=centers[i],scale=.1, size=(self.n_points,2))
+            data[i*self.n_points:(i+1)*self.n_points] = scatter
+            labels[i*self.n_points:(i+1)*self.n_points] = i
+        return centers,data,labels
+
 
     def plot(self):
         """Plot the dataset with the cluster centers as vectors"""
