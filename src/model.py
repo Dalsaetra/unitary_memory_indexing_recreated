@@ -134,27 +134,23 @@ class UMI_Jacobi(UMI):
 
 
 class UMI_Jacobi_2(UMI):
-    def __init__(self,in_size,out_size,lr=1e-2,bias=False,decay=0.01):
+    def __init__(self,in_size,out_size,lr=1e-2,bias=False,decay=0.01, orthogonal=False):
         super().__init__(in_size,out_size,lr=lr,bias=bias)
         torch.nn.init.orthogonal_(self.L1.weight, gain=1)
         self.decay = decay
         self.cross_losses = []
         self.jacobi_losses = []
+        if orthogonal:
+            torch.nn.init.orthogonal_(self.L1.weight, gain=1)
 
     def loss_fn(self, x, y_true):
         y_hat = self(x.float())
         loss = self.L(y_hat,y_true)
         self.cross_losses.append(loss.item())
 
-        # print(x.shape)
-
-        # jacobi = ft.vmap(ft.jacrev(self.L1))(x)
         jacobi = ft.vmap(ft.jacfwd(self.L1))(x)
-
-        # square_jacobi = (jacobi@jacobi.transpose(1,2))
         square_jacobi = (jacobi.transpose(1,2)@jacobi)
-        # print(square_jacobi.shape)
-        
+    
         jacobi_loss = self.decay*((torch.linalg.det(square_jacobi) - 1)**2).sum()
         self.jacobi_losses.append(jacobi_loss.item())
         loss += jacobi_loss
@@ -184,19 +180,35 @@ class UMI_Jacobi_flip(UMI):
 
     def flip(self,x,y_true):
         for i in range(len(self.L1.weight)):
-            y_hat1 = self(x.float())
-            loss1 = self.L(y_hat1,y_true)
-            L1_test = nn.Linear(self.in_size,self.out_size,bias=False)
-            L1_test.weight.data = self.L1.weight.data
-            L1_test.weight.data[i] = -L1_test.weight.data[i]
-            # print(L1_test.weight.data)
-            # print(self.L1.weight)
-            y_hat2 = F.softmax(L1_test(x.float()),dim=-1)
-            loss2 = self.L(y_hat2,y_true) 
-            # print(loss1,loss2)
+            # y_hat1 = self(x.float())
+            loss1 = self.loss_fn(x,y_true).item()
+            old = self.L1.weight.data[i]
+            self.L1.weight.data[i] = -self.L1.weight.data[i]
+            loss2 = self.loss_fn(x,y_true).item()
             if loss1 > loss2:
                 self.L1.weight.data[i] = -self.L1.weight.data[i]
-            
+                break
+            else:
+                self.L1.weight.data[i] = old
+                
+class UMI_J2(UMI):
+    def __init__(self,in_size,out_size,lr=1e-2,bias=False,decay=0.01):
+        super().__init__(in_size,out_size,lr=lr,bias=bias)
+        self.decay = decay
+        self.cross_losses = []
+        self.jacobi_losses = []
+
+    def loss_fn(self, x, y_true):
+        y_hat = self(x.float())
+        loss = self.L(y_hat,y_true)
+        self.cross_losses.append(loss.item())
+        jacobi = ft.vmap(ft.jacfwd(self.L1))(x)
+        square_jacobi = (jacobi.transpose(1,2)@jacobi)
+        # Loss minimize jacobi
+        jacobi_loss = self.decay*(torch.linalg.norm(square_jacobi,ord="fro",dim=(1,2))**2).sum()
+        self.jacobi_losses.append(jacobi_loss.item())
+        loss += jacobi_loss
+        return loss
 
 
     
