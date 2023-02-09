@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable, functional
 import torch.optim as optim
+import functorch as ft
 
 class UMI(nn.Module):
     def __init__(self,in_size,out_size,lr=1e-2,bias=False):
@@ -127,7 +128,34 @@ class UMI_Jacobi(UMI):
             # jacobi = functional.jacobian(self.L1,i.float(),create_graph=True,strict=False,vectorize=True) # Jacobian of the first layer
             jacobi = functional.jacobian(self.L1,i.float(),create_graph=True,strict=True,vectorize=False) # Jacobian of the first layer
             loss += self.decay*(torch.linalg.det(jacobi.transpose(0,1)@jacobi) - 1) # Determinant of the Jacobian (Jacobian is a square matrix
+        return loss
+
+
+class UMI_Jacobi_2(UMI):
+    def __init__(self,in_size,out_size,lr=1e-2,bias=False,decay=0.01):
+        super().__init__(in_size,out_size,lr=lr,bias=bias)
+        torch.nn.init.orthogonal_(self.L1.weight, gain=1)
+        self.decay = decay
+        self.cross_losses = []
+        self.jacobi_losses = []
+
+    def loss_fn(self, x, y_true):
+        y_hat = self(x.float())
+        loss = self.L(y_hat,y_true)
+        self.cross_losses.append(loss.item())
+
+        # print(x.shape)
+
+        # jacobi = ft.vmap(ft.jacrev(self.L1))(x)
+        jacobi = ft.vmap(ft.jacfwd(self.L1))(x)
+
+        # square_jacobi = (jacobi@jacobi.transpose(1,2))
+        square_jacobi = (jacobi.transpose(1,2)@jacobi)
+        # print(square_jacobi.shape)
         
+        jacobi_loss = self.decay*((torch.linalg.det(square_jacobi) - 1)**2).sum()
+        self.jacobi_losses.append(jacobi_loss.item())
+        loss += jacobi_loss # Determinant of the Jacobian (Jacobian is a square matrix
         return loss
 
     
