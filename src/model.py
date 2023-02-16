@@ -30,6 +30,25 @@ class UMI(nn.Module):
         self.optim.step()
         return loss.item()
 
+    def area_test(self):
+        weights = self.L1.weight.data.clone().detach()
+        # Add a third dimension to the weights with zeros
+        weights = torch.cat((weights,torch.zeros(weights.shape[0],1)),dim=1)
+        area = torch.linalg.cross(weights[0],weights[1])
+        for i in range(2,len(weights)):
+            area = torch.linalg.cross(area,weights[i])
+        return torch.linalg.norm(area).item()
+
+    def area_test_multiD(self):
+        weights = self.L1.weight.data.clone().detach()
+        # Add a third dimension to the weights with zeros if the weights are 2D
+        if len(weights) == 2:
+            weights = torch.cat((weights,torch.zeros(weights.shape[0],1)),dim=1)
+
+        # print(weights.T)
+        area = torch.linalg.cross(weights.T[0],weights.T[1])
+        return torch.linalg.norm(area).item()
+
 
 class UMI_L1(UMI):
     def __init__(self,in_size,out_size,decay=0.01,lr=1e-2,bias=False):
@@ -71,6 +90,7 @@ class UMI_L2(UMI):
         if not self.built_in:
             loss += (self.decay*self.L1.weight**2).sum() # L2 reg.
         return loss
+
         
 
 class UMI_SVB(UMI):
@@ -150,11 +170,71 @@ class UMI_Jacobi_2(UMI):
 
         jacobi = ft.vmap(ft.jacfwd(self.L1))(x)
         square_jacobi = (jacobi.transpose(1,2)@jacobi)
+        # square_jacobi = (jacobi@jacobi.transpose(1,2))
     
         jacobi_loss = self.decay*((torch.linalg.det(square_jacobi) - 1)**2).sum()
         self.jacobi_losses.append(jacobi_loss.item())
         loss += jacobi_loss
         return loss
+
+
+class UMI_Jacobi_2_savegrad(UMI):
+    def __init__(self,in_size,out_size,lr=1e-2,bias=False,decay=0.01, orthogonal=False):
+        super().__init__(in_size,out_size,lr=lr,bias=bias)
+        torch.nn.init.orthogonal_(self.L1.weight, gain=1)
+        self.decay = decay
+        self.cross_losses = []
+        self.jacobi_losses = []
+        self.cross_grad = []
+        self.jacobi_grad = []
+        if orthogonal:
+            torch.nn.init.orthogonal_(self.L1.weight, gain=1)
+
+    def loss_fn(self, x, y_true):
+        y_hat = self(x.float())
+        cross_loss = self.L(y_hat,y_true)
+        self.cross_losses.append(cross_loss.item())
+        cross_loss.backward(retain_graph=True)
+        for param in self.parameters():
+        #     print("Cross loss grad")
+        #     print(param.grad)
+            self.cross_grad.append(param.grad.detach().numpy().copy())
+        self.cross_loss = cross_loss
+
+        self.optim.zero_grad()
+        for param in self.parameters():
+            param.grad = None
+
+        jacobi = ft.vmap(ft.jacfwd(self.L1))(x)
+        square_jacobi = (jacobi.transpose(1,2)@jacobi)
+    
+        jacobi_loss = self.decay*((torch.linalg.det(square_jacobi) - 1)**2).sum()
+
+        self.jacobi_loss = jacobi_loss
+        self.jacobi_losses.append(jacobi_loss.item())
+        jacobi_loss.backward(retain_graph=True)
+        for param in self.parameters():
+        #     print("Jacobi loss grad")
+        #     print(param.grad)
+            self.jacobi_grad.append(param.grad.detach().numpy().copy())
+        
+        self.optim.zero_grad()
+        for param in self.parameters():
+            param.grad = None
+
+        loss = jacobi_loss + cross_loss
+        return loss
+
+    def train_step(self,x,y_true):
+        self.optim.zero_grad()
+        loss = self.loss_fn(x,y_true)
+        loss.backward()
+        self.optim.step()
+        # for param in self.parameters():
+        #     print("Full loss grad")
+        #     print("Params grad:", param.grad)
+        return loss.item()
+
 
 class UMI_Jacobi_flip(UMI):
     def __init__(self,in_size,out_size,lr=1e-2,bias=False,decay=0.01):
