@@ -4,12 +4,15 @@ import torch.nn.functional as F
 from torch.autograd import Variable, functional
 import torch.optim as optim
 import functorch as ft
+import numpy as np
+from tqdm import tqdm
 
 class UMI(nn.Module):
     def __init__(self,in_size,out_size,lr=1e-2,bias=False):
         super().__init__()
         self.L1 = nn.Linear(in_size,out_size,bias=bias)
-        self.optim = optim.Adam(params=self.parameters(),lr=lr)
+        self.lr = lr
+        self.optim = optim.Adam(params=self.parameters(),lr=self.lr)
         self.L = nn.CrossEntropyLoss()
         self.in_size = in_size
         self.out_size = out_size
@@ -187,6 +190,7 @@ class UMI_Jacobi_2_savegrad(UMI):
         self.jacobi_losses = []
         self.cross_grad = []
         self.jacobi_grad = []
+        self.w_his = []
         if orthogonal:
             torch.nn.init.orthogonal_(self.L1.weight, gain=1)
 
@@ -226,6 +230,7 @@ class UMI_Jacobi_2_savegrad(UMI):
         return loss
 
     def train_step(self,x,y_true):
+        
         self.optim.zero_grad()
         loss = self.loss_fn(x,y_true)
         loss.backward()
@@ -233,7 +238,32 @@ class UMI_Jacobi_2_savegrad(UMI):
         # for param in self.parameters():
         #     print("Full loss grad")
         #     print("Params grad:", param.grad)
+        test_jacobi = torch.tensor(self.jacobi_grad[-1])
+        test_cross = torch.tensor(self.cross_grad[-1])
+        test = torch.sum(test_jacobi*test_cross,dim=-1) < -0.01*self.decay*torch.ones(test_jacobi.shape[0])
+        if test.equal(torch.ones(test_jacobi.shape[0])):
+            self.lr = self.lr*100
         return loss.item()
+
+    def train(self,loader,n_epochs=5):
+        """Network training function for Jacobi
+        """
+        losses = []
+        epochs = []
+        areas_mD = []
+        
+        N = len(loader)
+        for epoch in tqdm(range(n_epochs)):
+            for param in self.parameters():
+                w = param
+                w_np = w.detach().numpy().copy()
+                self.w_his.append(w_np)
+            for i, (inputs,labels) in tqdm(enumerate(loader)):
+                loss = self.train_step(inputs,labels)
+                losses.append(loss)
+                epochs.append(epoch+i/N)
+                areas_mD.append(self.area_test())
+        return np.array(epochs), np.array(losses), np.array(self.cross_losses), np.array(self.jacobi_losses), np.array(areas_mD), np.array(self.jacobi_grad), np.array(self.cross_grad)
 
 
 class UMI_Jacobi_flip(UMI):
