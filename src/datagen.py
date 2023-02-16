@@ -4,7 +4,7 @@ import matplotlib.cm as cm
 
 
 class DataGen:
-    def __init__(self, n_clusters, n_points, scale=1, name="sym", seed=1234, as_pos=None):
+    def __init__(self, n_clusters, n_points, scale=1, name="sym", seed=1234, as_pos=None, noise=False):
         """Generate clusters of points around uniformly spaced points around origin in 2D, alternatively with asymmetric data
 
         Arguments:
@@ -22,6 +22,7 @@ class DataGen:
                 (default: {"sym"})
             seed -- seed of random normal distribution (default: {1234})
             as_pos -- 2 length list of 2D coordinate of extra asymmetric cluster, None only if symmetric (default: {None})
+            noise -- If to add noise to data (default: {False})
 
         Raises:
             ValueError: If name is not one of the options
@@ -31,6 +32,7 @@ class DataGen:
         self.scale = scale
         self.seed = seed
         self.as_pos = as_pos
+        self.noise = noise
         if name == "sym":
             self.centers, self.data, self.labels = self.data_gen()
         elif name == "as":
@@ -45,6 +47,26 @@ class DataGen:
             self.centers, self.data, self.labels = self.data_gen_manual()
         else:
             raise ValueError("Invalid name")
+
+        if self.noise:
+            self.noise_space_restrict(3*self.scale,1000)
+
+    def noise_space_restrict(self, noise_radius,n):
+        """Restrict noise space to a circle of radius noise_radius
+
+        Arguments:
+            noise_radius {float} -- radius of circle
+        """        """"""
+
+        n = n
+        r = noise_radius
+        r = np.sqrt(np.random.uniform(0, r, n))
+        theta = np.random.uniform(0, 2*np.pi, n)
+        circle = np.array([r*np.cos(theta),r*np.sin(theta)]).T
+        # Append circle to data
+        self.data = np.concatenate((self.data,circle),axis=0)
+        self.noise_data = circle
+        self.labels = np.concatenate((self.labels,np.ones(n)*self.n_clusters),axis=0)
 
     def data_gen(self):
         """Generate clusters of points around uniformly spaced points around origin in 2D
@@ -155,12 +177,18 @@ class DataGen:
         return centers,data,labels
 
 
-    def plot(self):
+    def plot(self,arrows=True):
         """Plot the dataset with the cluster centers as vectors"""
+        if self.noise == True:
+            plt.scatter(self.noise_data[:,0],self.noise_data[:,1],color="moccasin")
+
         colors = cm.rainbow(np.linspace(0, 1, self.n_clusters))
         for col,center,i in zip(colors,self.centers,range(self.n_clusters)):
             plt.scatter(self.data[i*self.n_points:(i+1)*self.n_points,0],self.data[i*self.n_points:(i+1)*self.n_points,1],color=col)
-            plt.arrow(0,0,center[0],center[1],length_includes_head=True,width=0.01,color=(0,0,0,0.5))
+            if arrows == True:
+                plt.arrow(0,0,center[0],center[1],length_includes_head=True,width=0.01,color=(0,0,0,0.5))
+        
+
 
         plt.title(f"Dataset with mean as vectors, n={self.n_clusters}*{self.n_points}")
         plt.axis("equal")
