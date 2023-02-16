@@ -118,6 +118,8 @@ class AnimatedScatter(object):
             self.projection_arrows.append(proj_arrow)
         self.ax.grid("on")
         self.ax.set_title("Loss={}".format(self.loss_history[0]))
+        self.ax.set_xlim([-1.5,1.5])
+        self.ax.set_ylim([-1.5,1.5])
 
     def update(self, k):
         """Update the scatter plot."""
@@ -167,6 +169,8 @@ class AnimatedScatter(object):
             self.rejection_arrows.append(rej_arrow)
             self.projection_arrows.append(proj_arrow)
 
+        self.ax.set_xlim([-1.5,1.5])
+        self.ax.set_ylim([-1.5,1.5])
         self.ax.set_title(f"Loss={self.loss_history[k]} End accuracy={self.acc}")
 
         # We need to return the updated artist for FuncAnimation to draw..
@@ -297,6 +301,8 @@ class AnimatedScatter_GradientData(object):
             self.jacobi_arrows.append(jacobi_arrow)
             self.cross_arrows.append(cross_arrow)
         self.ax.grid("on")
+        self.ax.set_xlim([-1.5,1.5])
+        self.ax.set_ylim([-1.5,1.5])
         plt.legend()
         self.ax.set_title("Loss={}".format(self.loss_history[0]))
 
@@ -369,6 +375,8 @@ class AnimatedScatter_GradientData(object):
             self.cross_arrows.append(cross_arrow)
 
         self.ax.set_title(f"Loss={self.loss_history[k]} End accuracy={self.acc}")
+        self.ax.set_xlim([-1.5,1.5])
+        self.ax.set_ylim([-1.5,1.5])
 
         # We need to return the updated artist for FuncAnimation to draw..
         # Note that it expects a sequence of artists, thus the trailing comma.
