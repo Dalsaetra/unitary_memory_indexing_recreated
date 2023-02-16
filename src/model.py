@@ -17,6 +17,12 @@ class UMI(nn.Module):
         self.in_size = in_size
         self.out_size = out_size
 
+        self.losses = []
+        self.epochs = []
+        self.areas = []
+        self.areas_mD = []
+        self.w_his = []
+
     def forward(self,x):
         x = self.L1(x)
         return F.softmax(x,dim=-1)
@@ -32,6 +38,35 @@ class UMI(nn.Module):
         loss.backward()
         self.optim.step()
         return loss.item()
+
+    def train(self,loader,n_epochs=5,area=False):
+        """Network training function
+
+        Arguments:
+            loader -- pytorch dataloader object of training data
+            model -- pytorch nn object, neural network model
+
+        Keyword Arguments:
+            n_epochs -- number of epochs for training (default: {5})
+
+        Returns:
+            epochs, losses -- numpy arrays of epoch numbers (with decimals representing each batch) and loss values for each batch
+        """
+        
+        N = len(loader)
+        for epoch in tqdm(range(n_epochs)):
+            for param in self.parameters():
+                w = param
+                w_np = w.detach().numpy().copy()
+                self.w_his.append(w_np)
+            for i, (inputs,labels) in tqdm(enumerate(loader)):
+                loss = self.train_step(inputs,labels)
+                self.losses.append(loss)
+                self.epochs.append(epoch+i/N)
+                if area:
+                    self.areas.append(self.area_test())
+                    self.areas_mD.append(self.area_test_multiD())
+        return np.array(self.epochs), np.array(self.losses), np.array(self.areas), np.array(self.areas_mD)
 
     def area_test(self):
         weights = self.L1.weight.data.clone().detach()
@@ -95,7 +130,6 @@ class UMI_L2(UMI):
         return loss
 
         
-
 class UMI_SVB(UMI):
     def __init__(self,in_size,out_size,lr=1e-2,bias=False):
         super().__init__(in_size,out_size,lr=lr,bias=bias)
@@ -121,6 +155,22 @@ class UMI_SVB(UMI):
         # new_weights = torch.tensor(new_weights,dtype=torch.float32)
         self.L1.weight.data = new_weights # Update the weights for the model
         # self.L1.weight.data = torch.nn.parameter.Parameter()
+
+    def train(self,loader,n_epochs=5):
+        """Network training function for hard SVB
+        """
+        N = len(loader)
+        for epoch in tqdm(range(n_epochs)):
+            self.SVB(eps=0.001)
+            for param in self.parameters():
+                w = param
+                w_np = w.detach().numpy().copy()
+                self.w_his.append(w_np)
+            for i, (inputs,labels) in tqdm(enumerate(loader)):
+                loss = self.train_step(inputs,labels)
+                self.losses.append(loss)
+                self.epochs.append(epoch+i/N)
+        return np.array(self.epochs), np.array(self.losses)
         
 
 class UMI_SVB_soft(UMI):
@@ -180,17 +230,35 @@ class UMI_Jacobi_2(UMI):
         loss += jacobi_loss
         return loss
 
+    def train(self,loader,n_epochs=5,area=False):
+        """Network training function for Jacobi
+        """
+        N = len(loader)
+        for epoch in tqdm(range(n_epochs)):
+            for param in self.parameters():
+                w = param
+                w_np = w.detach().numpy().copy()
+                self.w_his.append(w_np)
+            for i, (inputs,labels) in tqdm(enumerate(loader)):
+                loss = self.train_step(inputs,labels)
+                self.losses.append(loss)
+                self.epochs.append(epoch+i/N)
+                if area:
+                    self.areas.append(self.area_test())
+                    # self.areas_mD.append(self.area_test_multiD())
+        return np.array(self.epochs), np.array(self.losses), np.array(self.cross_losses), np.array(self.jacobi_losses), np.array(self.areas), np.array(self.areas_mD)
+
 
 class UMI_Jacobi_2_savegrad(UMI):
     def __init__(self,in_size,out_size,lr=1e-2,bias=False,decay=0.01, orthogonal=False):
         super().__init__(in_size,out_size,lr=lr,bias=bias)
         torch.nn.init.orthogonal_(self.L1.weight, gain=1)
+        self.lr_original = lr
         self.decay = decay
         self.cross_losses = []
         self.jacobi_losses = []
         self.cross_grad = []
         self.jacobi_grad = []
-        self.w_his = []
         if orthogonal:
             torch.nn.init.orthogonal_(self.L1.weight, gain=1)
 
@@ -238,32 +306,42 @@ class UMI_Jacobi_2_savegrad(UMI):
         # for param in self.parameters():
         #     print("Full loss grad")
         #     print("Params grad:", param.grad)
-        test_jacobi = torch.tensor(self.jacobi_grad[-1])
-        test_cross = torch.tensor(self.cross_grad[-1])
-        test = torch.sum(test_jacobi*test_cross,dim=-1) < -0.01*self.decay*torch.ones(test_jacobi.shape[0])
-        if test.equal(torch.ones(test_jacobi.shape[0])):
-            self.lr = self.lr*100
         return loss.item()
 
-    def train(self,loader,n_epochs=5):
+    def check_stopped(self):
+        test_jacobi = torch.tensor(self.jacobi_grad[-1])
+        test_cross = torch.tensor(self.cross_grad[-1])
+        # Check if all the jacobi and cross gradients are pointing in the opposite direction with a value of 1 persent of the decay
+        # If so, increase the learning rate by 100 for the next epoch
+        test = torch.sum(test_jacobi*test_cross,dim=-1) < -0.02*self.decay*torch.ones(test_jacobi.shape[0])
+        if test.equal(torch.ones(test_jacobi.shape[0])):
+            print("Temporarily increasing learning rate by 100")
+            self.lr = self.lr*100
+        self.optim = torch.optim.Adam(self.parameters(),lr=self.lr)
+
+
+    def train(self,loader,n_epochs=5,area=False):
         """Network training function for Jacobi
         """
-        losses = []
-        epochs = []
-        areas_mD = []
         
         N = len(loader)
         for epoch in tqdm(range(n_epochs)):
+            # Check if the learning rate should be increased, if test just to avoid error for first epoch
+            if len(self.jacobi_grad) > 1:
+                self.check_stopped()
             for param in self.parameters():
                 w = param
                 w_np = w.detach().numpy().copy()
                 self.w_his.append(w_np)
             for i, (inputs,labels) in tqdm(enumerate(loader)):
                 loss = self.train_step(inputs,labels)
-                losses.append(loss)
-                epochs.append(epoch+i/N)
-                areas_mD.append(self.area_test())
-        return np.array(epochs), np.array(losses), np.array(self.cross_losses), np.array(self.jacobi_losses), np.array(areas_mD), np.array(self.jacobi_grad), np.array(self.cross_grad)
+                self.losses.append(loss)
+                self.epochs.append(epoch+i/N)
+                if area:
+                    self.areas_mD.append(self.area_test())
+            self.lr = self.lr_original
+            self.optim = torch.optim.Adam(self.parameters(),lr=self.lr)
+        return np.array(self.epochs), np.array(self.losses), np.array(self.cross_losses), np.array(self.jacobi_losses), np.array(self.areas_mD), np.array(self.jacobi_grad), np.array(self.cross_grad)
 
 
 class UMI_Jacobi_flip(UMI):
@@ -300,7 +378,32 @@ class UMI_Jacobi_flip(UMI):
                 break
             else:
                 self.L1.weight.data[i] = old
-                
+
+    def train(self,loader,n_epochs=5):
+        """Network training function for Jacobi
+        """
+        j = 0
+        N = len(loader)
+        for epoch in tqdm(range(n_epochs)):
+            j += 1
+            if j%100 == 0:
+                print(last_input,last_label)
+                self.flip(last_input,last_label)
+            for param in self.parameters():
+                w = param
+                w_np = w.detach().numpy().copy()
+                self.w_his.append(w_np)
+            for i, (inputs,labels) in tqdm(enumerate(loader)):
+                loss = self.train_step(inputs,labels)
+                self.flip(loader.dataset.x,loader.dataset.y)
+                self.losses.append(loss)
+                self.epochs.append(epoch+i/N)
+                if i == 12-1:
+                    last_input = inputs[0]
+                    last_label = labels[0]
+        return np.array(self.epochs), np.array(self.losses), np.array(self.cross_losses), np.array(self.jacobi_losses)
+
+            
 class UMI_J2(UMI):
     def __init__(self,in_size,out_size,lr=1e-2,bias=False,decay=0.01):
         super().__init__(in_size,out_size,lr=lr,bias=bias)
@@ -321,7 +424,7 @@ class UMI_J2(UMI):
         return loss
 
 
-    
+
 class UMI_big(nn.Module):
     def __init__(self,in_size,out_size,hidden_size=100,lr=1e-2,bias=False):
         super().__init__()
@@ -346,7 +449,6 @@ class UMI_big(nn.Module):
         loss.backward()
         self.optim.step()
         return loss.item()
-
 
 class UMI_bigger(nn.Module):
     def __init__(self,in_size,out_size,hidden_size=100,lr=1e-2,bias=False):
