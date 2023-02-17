@@ -280,7 +280,8 @@ class UMI_Jacobi_2_savegrad(UMI):
         jacobi = ft.vmap(ft.jacfwd(self.L1))(x)
         square_jacobi = (jacobi.transpose(1,2)@jacobi)
     
-        jacobi_loss = self.decay*((torch.linalg.det(square_jacobi) - 1)**2).sum()
+        # jacobi_loss = self.decay*((torch.linalg.det(square_jacobi) - 1)**2).sum()
+        jacobi_loss = self.decay*((torch.abs(torch.linalg.det(square_jacobi)) - 1)**2).sum()
 
         self.jacobi_loss = jacobi_loss
         self.jacobi_losses.append(jacobi_loss.item())
@@ -308,15 +309,15 @@ class UMI_Jacobi_2_savegrad(UMI):
         #     print("Params grad:", param.grad)
         return loss.item()
 
-    def check_stopped(self):
+    def check_stopped(self,threshold,lr_scaling):
         test_jacobi = torch.tensor(self.jacobi_grad[-1])
         test_cross = torch.tensor(self.cross_grad[-1])
         # Check if all the jacobi and cross gradients are pointing in the opposite direction with a value of 1 persent of the decay
         # If so, increase the learning rate by 100 for the next epoch
-        test = torch.sum(test_jacobi*test_cross,dim=-1) < -0.02*self.decay*torch.ones(test_jacobi.shape[0])
+        test = torch.sum(test_jacobi*test_cross,dim=-1) < -threshold*self.decay*torch.ones(test_jacobi.shape[0])
         if test.equal(torch.ones(test_jacobi.shape[0])):
-            print("Temporarily increasing learning rate by 100")
-            self.lr = self.lr*100
+            print(f"Temporarily increasing learning rate by {lr_scaling}")
+            self.lr = self.lr*lr_scaling
         self.optim = torch.optim.Adam(self.parameters(),lr=self.lr)
 
 
@@ -328,7 +329,7 @@ class UMI_Jacobi_2_savegrad(UMI):
         for epoch in tqdm(range(n_epochs)):
             # Check if the learning rate should be increased, if test just to avoid error for first epoch
             if len(self.jacobi_grad) > 1:
-                self.check_stopped()
+                self.check_stopped(0.1,100)
             for param in self.parameters():
                 w = param
                 w_np = w.detach().numpy().copy()
@@ -342,6 +343,23 @@ class UMI_Jacobi_2_savegrad(UMI):
             self.lr = self.lr_original
             self.optim = torch.optim.Adam(self.parameters(),lr=self.lr)
         return np.array(self.epochs), np.array(self.losses), np.array(self.cross_losses), np.array(self.jacobi_losses), np.array(self.areas_mD), np.array(self.jacobi_grad), np.array(self.cross_grad)
+
+
+class UMI_Jacobi_abs(UMI_Jacobi_2):
+    def loss_fn(self, x, y_true):
+        y_hat = self(x.float())
+        loss = self.L(y_hat,y_true)
+        self.cross_losses.append(loss.item())
+
+        jacobi = ft.vmap(ft.jacfwd(self.L1))(x)
+        square_jacobi = (jacobi.transpose(1,2)@jacobi)
+        # square_jacobi = (jacobi@jacobi.transpose(1,2))
+    
+        jacobi_loss = self.decay*((torch.abs(torch.linalg.det(square_jacobi)) - 1)**2).sum()
+        self.jacobi_losses.append(jacobi_loss.item())
+        loss += jacobi_loss
+        return loss
+
 
 
 class UMI_Jacobi_flip(UMI):
